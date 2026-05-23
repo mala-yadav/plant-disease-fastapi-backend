@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Soybean Plant Disease API Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 960px; margin: 24px auto; padding: 0 16px; line-height: 1.5; }
+    h1 { color: #1f7a3a; }
+    section { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    button { padding: 10px 14px; margin: 6px 4px; border: 0; border-radius: 8px; cursor: pointer; background: #1f7a3a; color: white; }
+    button.secondary { background: #555; }
+    input { margin: 8px 0; }
+    video, canvas, img { max-width: 100%; border-radius: 12px; border: 1px solid #ddd; margin: 8px 0; }
+    pre { background: #f5f5f5; padding: 12px; border-radius: 8px; overflow-x: auto; }
+    .warning { color: #8a5a00; }
+    .ok { color: #1f7a3a; }
+  </style>
+</head>
+<body>
+  <h1>🌿 Soybean Plant Disease Classifier API Test</h1>
+  <p>This page is for testing your FastAPI backend. Your final Android app will call the same endpoints.</p>
+
+  <section>
+    <h2>1. Gallery Image Upload</h2>
+    <input type="file" id="imageFile" accept="image/*" />
+    <button onclick="uploadImage()">Predict Image</button>
+    <pre id="imageResult">Result will appear here...</pre>
+  </section>
+
+  <section>
+    <h2>2. Camera Capture Image</h2>
+    <p class="warning">Camera works on localhost or HTTPS only.</p>
+    <video id="cameraPreview" autoplay playsinline width="400"></video><br/>
+    <button onclick="startCamera()">Open Camera</button>
+    <button onclick="capturePhoto()">Capture Photo</button>
+    <button class="secondary" onclick="stopCamera()">Stop Camera</button><br/>
+    <canvas id="photoCanvas" width="400" height="300"></canvas><br/>
+    <button onclick="sendCapturedPhoto()">Predict Captured Photo</button>
+    <pre id="cameraResult">Result will appear here...</pre>
+  </section>
+
+  <section>
+    <h2>3. Gallery Video Upload</h2>
+    <p>Limit: only videos up to 10 seconds. API analyzes every 10th frame, max 30 frames.</p>
+    <input type="file" id="videoFile" accept="video/*" />
+    <button onclick="uploadVideo()">Predict Video</button>
+    <pre id="videoResult">Result will appear here...</pre>
+  </section>
+
+  <section>
+    <h2>4. Live 10-Second Video Recording</h2>
+    <p class="warning">Browser recording support depends on device/browser. Works best in Chrome/Edge on HTTPS or localhost.</p>
+    <video id="recordPreview" autoplay muted playsinline width="400"></video><br/>
+    <button onclick="startRecording()">Start 10-sec Recording</button>
+    <button class="secondary" onclick="stopRecording()">Stop Early</button>
+    <pre id="recordResult">Result will appear here...</pre>
+  </section>
+
+  <script>
+    let cameraStream = null;
+    let recordStream = null;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+
+    async function postFile(endpoint, file, resultElementId) {
+      const resultEl = document.getElementById(resultElementId);
+      resultEl.textContent = "Uploading and predicting...";
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const response = await fetch(endpoint, { method: "POST", body: formData });
+        const data = await response.json();
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        resultEl.textContent = "Error: " + err;
+      }
+    }
+
+    async function uploadImage() {
+      const fileInput = document.getElementById("imageFile");
+      if (!fileInput.files.length) return alert("Please select an image.");
+      await postFile("/predict/image", fileInput.files[0], "imageResult");
+    }
+
+    async function startCamera() {
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      document.getElementById("cameraPreview").srcObject = cameraStream;
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+      }
+    }
+
+    function capturePhoto() {
+      const video = document.getElementById("cameraPreview");
+      const canvas = document.getElementById("photoCanvas");
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
+
+    async function sendCapturedPhoto() {
+      const canvas = document.getElementById("photoCanvas");
+      canvas.toBlob(async (blob) => {
+        if (!blob) return alert("Capture photo first.");
+        const file = new File([blob], "camera_photo.jpg", { type: "image/jpeg" });
+        await postFile("/predict/image", file, "cameraResult");
+      }, "image/jpeg", 0.95);
+    }
+
+    async function uploadVideo() {
+      const fileInput = document.getElementById("videoFile");
+      if (!fileInput.files.length) return alert("Please select a video.");
+      await postFile("/predict/video", fileInput.files[0], "videoResult");
+    }
+
+    async function startRecording() {
+      recordedChunks = [];
+      recordStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      document.getElementById("recordPreview").srcObject = recordStream;
+
+      let mimeType = "video/webm";
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = "";
+      }
+
+      mediaRecorder = new MediaRecorder(recordStream, mimeType ? { mimeType } : undefined);
+      mediaRecorder.ondataavailable = event => {
+        if (event.data.size > 0) recordedChunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(recordedChunks, { type: "video/webm" });
+        const file = new File([blob], "recorded_10sec.webm", { type: "video/webm" });
+        if (recordStream) {
+          recordStream.getTracks().forEach(track => track.stop());
+          recordStream = null;
+        }
+        await postFile("/predict/video", file, "recordResult");
+      };
+
+      mediaRecorder.start();
+      document.getElementById("recordResult").textContent = "Recording for 10 seconds...";
+      setTimeout(() => {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+      }, 10000);
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    }
+  </script>
+</body>
+</html>
