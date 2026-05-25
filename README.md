@@ -1,3 +1,12 @@
+---
+title: Plant Disease FastAPI Backend
+emoji: 🌱
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+---
+
 # Soybean Plant Disease Classifier - FastAPI Backend
 
 This is **Stage 2** of your deployment:
