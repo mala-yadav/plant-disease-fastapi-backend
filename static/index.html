@@ -67,6 +67,8 @@
     let recordStream = null;
     let mediaRecorder = null;
     let recordedChunks = [];
+    let photoCaptured = false;
+    let isRecording = false;
 
     function cleanName(name) {
       return String(name || "").replaceAll("_", " ");
@@ -128,6 +130,8 @@
     }
 
     async function startCamera() {
+      photoCaptured = false;
+      document.getElementById("cameraResult").innerHTML = "Camera opened. Please capture a photo first.";
       cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
       document.getElementById("cameraPreview").srcObject = cameraStream;
     }
@@ -140,16 +144,39 @@
     }
 
     function capturePhoto() {
+      if (!cameraStream) {
+        document.getElementById("cameraResult").innerHTML = '<span class="low">Please open camera first.</span>';
+        return;
+      }
+
       const video = document.getElementById("cameraPreview");
       const canvas = document.getElementById("photoCanvas");
       const ctx = canvas.getContext("2d");
+
+      if (!video.videoWidth || !video.videoHeight) {
+        document.getElementById("cameraResult").innerHTML = '<span class="low">Camera is not ready yet. Please wait 1-2 seconds and try again.</span>';
+        return;
+      }
+
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      photoCaptured = true;
+      document.getElementById("cameraResult").innerHTML = '<span class="reliable">Photo captured. Now click Predict Captured Photo.</span>';
     }
 
     async function sendCapturedPhoto() {
+      const resultEl = document.getElementById("cameraResult");
+
+      if (!photoCaptured) {
+        resultEl.innerHTML = '<span class="low">Please capture photo first.</span>';
+        return;
+      }
+
       const canvas = document.getElementById("photoCanvas");
       canvas.toBlob(async (blob) => {
-        if (!blob) return alert("Capture photo first.");
+        if (!blob) {
+          resultEl.innerHTML = '<span class="low">Please capture photo first.</span>';
+          return;
+        }
         const file = new File([blob], "camera_photo.jpg", { type: "image/jpeg" });
         await postFile("/predict/image", file, "cameraResult");
       }, "image/jpeg", 0.95);
@@ -163,6 +190,8 @@
 
     async function startRecording() {
       recordedChunks = [];
+      isRecording = true;
+      document.getElementById("recordResult").innerHTML = "Recording started. Please wait up to 10 seconds...";
       recordStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
       document.getElementById("recordPreview").srcObject = recordStream;
 
@@ -177,12 +206,22 @@
       };
 
       mediaRecorder.onstop = async () => {
+        isRecording = false;
+
+        if (!recordedChunks.length) {
+          document.getElementById("recordResult").innerHTML = '<span class="low">No video was recorded. Please start recording first.</span>';
+          return;
+        }
+
         const blob = new Blob(recordedChunks, { type: "video/webm" });
         const file = new File([blob], "recorded_10sec.webm", { type: "video/webm" });
+
         if (recordStream) {
           recordStream.getTracks().forEach(track => track.stop());
           recordStream = null;
         }
+
+        document.getElementById("recordResult").innerHTML = "Recording completed. Uploading and predicting...";
         await postFile("/predict/video", file, "recordResult");
       };
 
@@ -194,9 +233,11 @@
     }
 
     function stopRecording() {
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
+      if (!mediaRecorder || mediaRecorder.state === "inactive") {
+        document.getElementById("recordResult").innerHTML = '<span class="low">Please start video recording first.</span>';
+        return;
       }
+      mediaRecorder.stop();
     }
   </script>
 </body>
